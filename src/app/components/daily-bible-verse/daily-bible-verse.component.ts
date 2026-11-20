@@ -403,7 +403,19 @@ export class DailyBibleVerseComponent implements OnInit, OnDestroy {
         cursor: pointer;
         transition: all 0.3s ease;
       ">
-        Square (1:1) - 800x800
+        Square [1:1] 720×720
+      </button>
+      <button class="ratio-btn" data-ratio="3:4" style="
+        padding: 12px 20px;
+        border: 2px solid #555;
+        background: #555;
+        color: white;
+        border-radius: 8px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      ">
+        Portrait [3:4] 720×960
       </button>
       <button class="ratio-btn" data-ratio="9:16" style="
         padding: 12px 20px;
@@ -415,7 +427,7 @@ export class DailyBibleVerseComponent implements OnInit, OnDestroy {
         cursor: pointer;
         transition: all 0.3s ease;
       ">
-        Story (9:16) - 720x1280
+        Story [9:16] 720×1280
       </button>
       <button class="cancel-btn" style="
         padding: 12px 20px;
@@ -478,6 +490,13 @@ export class DailyBibleVerseComponent implements OnInit, OnDestroy {
       });
 
     dialog
+      .querySelector('[data-ratio="3:4"]')
+      ?.addEventListener('click', () => {
+        this.createImageWithRatio('3:4');
+        this.removeRatioMenu();
+      });
+
+    dialog
       .querySelector('[data-ratio="9:16"]')
       ?.addEventListener('click', () => {
         this.createImageWithRatio('9:16');
@@ -519,7 +538,7 @@ export class DailyBibleVerseComponent implements OnInit, OnDestroy {
     }
   }
 
-  async createImageWithRatio(ratio: '1:1' | '9:16') {
+  async createImageWithRatio(ratio: '1:1' | '3:4' | '9:16') {
     try {
       // Show loading message
       await Toast.show({
@@ -542,8 +561,11 @@ export class DailyBibleVerseComponent implements OnInit, OnDestroy {
 
       // Set canvas dimensions based on ratio
       if (ratio === '1:1') {
-        canvas.width = 800;
-        canvas.height = 800;
+        canvas.width = 720;
+        canvas.height = 720;
+      } else if (ratio === '3:4') {
+        canvas.width = 720;
+        canvas.height = 960;
       } else if (ratio === '9:16') {
         canvas.width = 720;
         canvas.height = 1280;
