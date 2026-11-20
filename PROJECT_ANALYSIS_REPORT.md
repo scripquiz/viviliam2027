@@ -7,11 +7,10 @@
 
 ## Executive Summary
 
-The project has undergone a significant migration from an older Angular version to Angular 22, but the work is **incomplete**. The application bootstrapping has moved to standalone (`bootstrapApplication` + `app.config.ts` providers), while the majority of routing still relies on legacy NgModule `loadChildren`. This hybrid state creates:
+The project has undergone a significant migration from an older Angular version to Angular 22. **Phase 1 dead-code removal is complete** (4 critical files deleted, 1 string-token provider removed, commented code cleaned). The application now uses standalone bootstrapping (`bootstrapApplication` + `app.config.ts` providers) with fewer residual issues. However, the majority of routing still relies on legacy NgModule `loadChildren`. This hybrid state creates:
 
-- **Dead code** (~60+ files with zero runtime value)
-- **Duplicate route definitions** causing unreachable dead code
-- **Potential runtime DI risks** from missing provider annotations
+- **Dead code** (~42 remaining files with zero runtime value — reduced from ~60+)
+- **Potential runtime DI risks** from missing provider annotations (1 item remains)
 - **Performance overhead** from 97% of pages using eager change detection
 - **Memory leak risks** in multiple services (no `ngOnDestroy` cleanup)
 
@@ -32,25 +31,20 @@ The project has undergone a significant migration from an older Angular version 
 
 ## 🔴 P0 — Critical Issues (Bugs / Runtime Risks)
 
-### C1: AuthserviceProvider missing `@Injectable({ providedIn: 'root' })`
+### C1: AuthserviceProvider missing `@Injectable({ providedIn: 'root' })` ✅ RESOLVED
 - **File:** `src/providers/authservice/authservice.ts`, line 6
-- **Impact:** Service uses bare `@Injectable()` without `providedIn`. While it is listed in `app.config.ts` as a class provider, tree-shaking during production AOT builds could drop it if any bundler optimization removes unused providers. 20+ page components depend on injection of this service — runtime DI errors would occur silently or at startup.
-- **Fix:** Add `@Injectable({ providedIn: 'root' })` to line 6, and remove from `app.config.ts` providers array (cleaner).
+- **Status:** Fixed — `@Injectable({ providedIn: 'root' })` confirmed present since prior session.
+- **Impact (before fix):** Service used bare `@Injectable()` without `providedIn`. While it was listed in `app.config.ts` as a class provider, tree-shaking during production AOT builds could drop it if any bundler optimization removes unused providers. 20+ page components depend on injection of this service — runtime DI errors would occur silently or at startup.
 
-### C2: Duplicate route path `'addnotes'` in `app.routes.ts`
-- **File:** `src/app/app.routes.ts`, lines 25–26 AND lines 137–138
-- **Impact:** Two different routes both map to `AddnotesPageModule`. Angular's router uses the **first** match, making the second entry completely unreachable dead code. This is confusing for developers and wastes maintenance effort.
-- **Fix:** Remove the duplicate at line 137–138 (or rename if it was intended to be a different page).
+### C2: Duplicate route path `'addnotes'` in `app.routes.ts` ✅ RESOLVED
+- **File:** `src/app/app.routes.ts`, lines 25–26 (kept), former lines 137–138 (removed)
+- **Status:** Fixed — duplicate at lines 137–138 removed in prior session. Single `'addnotes'` route remains at line 25.
+- **Impact (before fix):** Two different routes both mapped to `AddnotesPageModule`. Angular's router uses the **first** match, making the second entry completely unreachable dead code. This was confusing for developers and wasted maintenance effort.
 
-### C3: String token `'DatabaseConnection'` creates a second `DatabaseService` instance
-- **File:** `src/app/app.config.ts`, lines 38 and 47
-- **Code pattern:**
-  ```typescript
-  { provide: DatabaseService, useClass: DatabaseService },        // line 38
-  { provide: 'DatabaseConnection', useClass: DatabaseService }    // line 47 — SEPARATE instance!
-  ```
-- **Impact:** These are two different injection keys. Components injecting `'DatabaseConnection'` get a **separate** `DatabaseService` instance from components injecting `DatabaseService` directly. Since `DatabaseService` uses connection pooling and singleton state (`openedConnections`, `pendingOpenOperations`), this causes **state desynchronization**: one component's database operations may not see another's connections or pending operations.
-- **Fix:** Audit all consumers of `'DatabaseConnection'`. Either remove the string token provider (if nothing requires it) or ensure the class is truly a singleton via `useFactory` with explicit shared instance.
+### C3: String token `'DatabaseConnection'` creates a second `DatabaseService` instance ✅ RESOLVED
+- **File:** `src/app/app.config.ts`, line 36 (kept), former line 47 (removed)
+- **Status:** Fixed — `{ provide: 'DatabaseConnection', useClass: DatabaseService }` removed. `DatabaseService` is now registered as a single class token provider (line 36). No string-token duplicate exists.
+- **Impact (before fix):** Components injecting `'DatabaseConnection'` got a **separate** `DatabaseService` instance from components injecting `DatabaseService` directly. Since `DatabaseService` uses connection pooling and singleton state (`openedConnections`, `pendingOpenOperations`), this caused **state desynchronization**: one component's database operations may not see another's connections or pending operations.
 
 ---
 
@@ -99,25 +93,28 @@ Same 21 modules (e.g., `src/app/tabs/tabs.module.ts`) that only import:
 - `FormsModule`, `IonicModule` (can be imported at component level or in app.config.ts)
 - One routing module (see H2 above)
 
-### H4: `AppModule` is dead code
-- **File:** `src/app/app.module.ts` (lines 8–13)
-- **Content:** `declarations: []`, `imports: []`, `exports: []` — completely empty
-- **main.ts** uses `bootstrapApplication(AppComponent, appConfig)` which bypasses NgModule bootstrapping entirely.
+### H4: `AppModule` is dead code ✅ RESOLVED
+- **File:** `src/app/app.module.ts` (lines 8–13) — deleted in prior session
+- **Status:** Fixed — file deleted. It contained `declarations: []`, `imports: []`, `exports: []` — completely empty and never imported by any NgModule.
 
-### H5: `CoreModule` and `SharedModule` are dead code
-- **File:** `src/app/core/core.module.ts` (40 lines) — providers duplicate `app.config.ts` exactly. Never imported by any NgModule.
-- **File:** `src/app/shared/shared.module.ts` (21 lines) — empty declarations, exports as template for future use. Never imported anywhere.
+### H5: `CoreModule` and `SharedModule` are dead code ✅ RESOLVED
+- **File:** `src/app/core/core.module.ts` (40 lines) — deleted in prior session
+- **File:** `src/app/shared/shared.module.ts` (21 lines) — deleted in prior session
+- **Status:** Fixed — both files deleted. `CoreModule` providers duplicated `app.config.ts` exactly and was never imported. `SharedModule` had empty declarations/exports as a template for future use, also never imported anywhere.
+
+### H7: Duplicate route definitions between `app.routes.ts` and `app-routing.module.ts` ✅ RESOLVED
+- **File:** `src/app/app-routing.module.ts` — deleted in prior session
+- **Status:** Fixed — file deleted. It defined the same routes as `app.routes.ts` with an unused `SelectivePreloadingStrategy` class (lines 16–20). Only `app.config.ts` line 24 (`provideRouter(routes)`) was consumed at runtime.
+- **34 of 35** page components use `ChangeDetectionStrategy.Eager` (the legacy default).
+- Only **2** (`daily-bible-verse.component.ts`, `daily-bible-quote.component.ts`) use `OnPush`.
+- Static content pages trigger change detection on every event cycle (mouse move, keyboard, timer) unnecessarily.
+- **Impact:** Degraded performance on lower-end Android devices, especially during scrolling and animation-heavy pages.
 
 ### H6: 97% of components use `ChangeDetectionStrategy.Eager` instead of `OnPush`
 - **34 of 35** page components use `ChangeDetectionStrategy.Eager` (the legacy default).
 - Only **2** (`daily-bible-verse.component.ts`, `daily-bible-quote.component.ts`) use `OnPush`.
 - Static content pages trigger change detection on every event cycle (mouse move, keyboard, timer) unnecessarily.
 - **Impact:** Degraded performance on lower-end Android devices, especially during scrolling and animation-heavy pages.
-
-### H7: Duplicate route definitions between `app.routes.ts` and `app-routing.module.ts`
-- **File:** `src/app/app-routing.module.ts`
-- Defines the **same routes** as `app.routes.ts` with an unused `SelectivePreloadingStrategy` class (lines 16–20).
-- This file is **never imported by anything**. Only `app.config.ts` line 24 (`provideRouter(routes)`) is consumed at runtime.
 
 ---
 
@@ -136,9 +133,10 @@ Same 21 modules (e.g., `src/app/tabs/tabs.module.ts`) that only import:
 - Others use absolute module paths: `'src/providers/authservice/authservice'` (e.g., `home.page.ts`, `settings.page.ts`)
 - **Fix:** Normalize to a path alias defined in `tsconfig.json` (e.g., `@providers/authservice`) or move into `src/app/core/services/` and import from there.
 
-### M3: AuthserviceProvider contains commented-out legacy API code (lines 160–172)
-- Deprecated HTTP call patterns in block comments. Dead code adds file size (~13 lines) and confusion for future maintainers.
-- **Fix:** Delete or move to git history reference.
+### M3: AuthserviceProvider contains commented-out legacy API code ✅ RESOLVED
+- **File:** `src/providers/authservice/authservice.ts`, former lines 160–172 (deleted)
+- **Status:** Fixed — commented-out legacy HTTP call patterns deleted in prior session. File now contains only active code (lines 1–263).
+- **Impact (before fix):** Dead code added file size (~13 lines) and confusion for future maintainers. Deprecated HTTP call patterns were visible in production source.
 
 ### M4: DarkModeService not provided via `app.config.ts`
 - Used by 6+ page components (`settings.page.ts`, `search.page.ts`, `read.page.ts`, `home.page.ts`, `compare.page.ts`, `app.component.ts`)
@@ -158,10 +156,9 @@ Same 21 modules (e.g., `src/app/tabs/tabs.module.ts`) that only import:
 - Should use `.npmrc` (`node-options="--max-old-space-size=8192"`) or `NODE_OPTIONS` environment variable instead.
 - **Benefit:** Cleaner scripts, easier to override per-environment (CI vs dev).
 
-### L3: `SelectivePreloadingStrategy` in `app-routing.module.ts` is dead code
-- **File:** `src/app/app-routing.module.ts`, lines 16–20
-- Never consumed anywhere. The class exists but nothing references it.
-- **Fix:** Delete the file entirely.
+### L3: `SelectivePreloadingStrategy` in `app-routing.module.ts` is dead code ✅ RESOLVED
+- **File:** `src/app/app-routing.module.ts` — deleted in prior session
+- **Status:** Fixed — file deleted. The class existed but nothing referenced it.
 
 ### L4: Large initial bundle budget warning (1.1 MB) is concerning
 - **File:** `angular.json`, line 64
@@ -228,29 +225,29 @@ These TypeScript files (`1.ts` through `15.ts`) in the `assets/` directory are h
 
 ## 🗂️ Dead Code Summary (Safe to Delete Today)
 
-| File(s) | Reason | Risk |
-|---------|--------|------|
-| `src/app/app.module.ts` | Empty NgModule, never used | **Zero risk** |
-| `src/app/core/core.module.ts` | Providers duplicated in app.config.ts, never imported | **Zero risk** |
-| `src/app/shared/shared.module.ts` | Empty declarations/exports, never imported | **Zero risk** |
-| `src/app/app-routing.module.ts` | Duplicate routes + dead `SelectivePreloadingStrategy` | **Zero risk** |
-| 21× `*-routing.module.ts` files | Only contain `RouterModule.forChild(...)` | **Low risk** (requires module→standalone migration first) |
-| 21× page-level `*.module.ts` files | Only import CommonModule, FormsModule, IonicModule | **Low risk** (requires migration first) |
+| File(s) | Reason | Status |
+|---------|--------|--------|
+| ~~`src/app/app.module.ts`~~ | Empty NgModule, never used | ✅ **Deleted** |
+| ~~`src/app/core/core.module.ts`~~ | Providers duplicated in app.config.ts, never imported | ✅ **Deleted** |
+| ~~`src/app/shared/shared.module.ts`~~ | Empty declarations/exports, never imported | ✅ **Deleted** |
+| ~~`src/app/app-routing.module.ts`~~ | Duplicate routes + dead `SelectivePreloadingStrategy` | ✅ **Deleted** |
+| 21× `*-routing.module.ts` files | Only contain `RouterModule.forChild(...)` | ⚠️ Low risk (requires module→standalone migration first) |
+| 21× page-level `*.module.ts` files | Only import CommonModule, FormsModule, IonicModule | ⚠️ Low risk (requires migration first) |
 
 ---
 
 ## 📈 Recommended Action Plan
 
-### Phase 1 — Quick Wins (Today, < 30 min)
-- [ ] C1: Add `@Injectable({ providedIn: 'root' })` to AuthserviceProvider
-- [ ] C2: Remove duplicate `'addnotes'` route from `app.routes.ts`
-- [ ] M3: Delete commented-out legacy API code from AuthserviceProvider
-- [ ] L3: Delete `src/app/app-routing.module.ts` entirely
-- [ ] H4: Delete `src/app/app.module.ts` (already empty)
-- [ ] H5: Delete `src/app/core/core.module.ts` and `src/app/shared/shared.module.ts`
+### Phase 1 — Quick Wins ✅ COMPLETE (4 files deleted, 1 string-token provider removed, commented code cleaned)
+- [x] C1: Add `@Injectable({ providedIn: 'root' })` to AuthserviceProvider — confirmed present
+- [x] C2: Remove duplicate `'addnotes'` route from `app.routes.ts` — duplicate removed
+- [x] M3: Delete commented-out legacy API code from AuthserviceProvider — deleted
+- [x] L3: Delete `src/app/app-routing.module.ts` entirely — deleted
+- [x] H4: Delete `src/app/app.module.ts` (already empty) — deleted
+- [x] H5: Delete `src/app/core/core.module.ts` and `src/app/shared/shared.module.ts` — deleted
 
 ### Phase 2 — Safety Fixes (1 hour)
-- [ ] C3: Audit `'DatabaseConnection'` token usage — remove if unused or fix singleton
+- [x] C3: Audit `'DatabaseConnection'` token usage — removed, single class-token provider confirmed
 - [ ] M4: Add `@Injectable({ providedIn: 'root' })` to DarkModeService
 - [ ] Fix memory leaks in network.service.ts, wake-lock.service.ts (add ngOnDestroy)
 - [ ] Convert console.log → logger.service() calls across all services

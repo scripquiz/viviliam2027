@@ -6,7 +6,6 @@ import { provideHttpClient, withXhr, withInterceptorsFromDi } from '@angular/com
 import { provideAnimations } from '@angular/platform-browser/animations';
 
 import { routes } from './app.routes';
-import { AuthserviceProvider } from '../providers/authservice/authservice';
 import { DatabaseService } from './services/database.service';
 import { DatabaseImportService } from './services/database-import.service';
 import { NetworkService } from './services/network.service';
@@ -33,8 +32,7 @@ export const appConfig: ApplicationConfig = {
     // Animations
     provideAnimations(),
 
-    // Core services (previously in app.module.ts + core/core.module.ts)
-    AuthserviceProvider,
+    // Core services
     DatabaseService,
     DatabaseImportService,
     NetworkService,
@@ -42,8 +40,5 @@ export const appConfig: ApplicationConfig = {
     ScreenOrientationService,
     ShareService,
     WakeLockService,
-
-    // DatabaseConnection token (provided by DatabaseService)
-    { provide: 'DatabaseConnection', useClass: DatabaseService },
   ],
 };

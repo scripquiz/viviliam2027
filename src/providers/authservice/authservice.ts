@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { AlertController } from '@ionic/angular';
 import { timeout } from 'rxjs/operators';
 
-@Injectable()
+@Injectable({ providedIn: 'root' })
 export class AuthserviceProvider {
   API_URL = 'https://api.viviliam.com/api/';
   //API_URL="http://apitest.viviliam.com/api/";
@@ -157,19 +157,6 @@ export class AuthserviceProvider {
           }
         }
       );
-    /* this.http.get(url).subscribe(data => { 
-       
-       //this.result = data;
-       //this.items = JSON.stringify(this.result);
-       //this.allData = JSON.parse(this.items);
-         //callBackSet(true, this.allData["Returnresult"],objThis);
-         callBackSet(true, data,objThis);
-       
-       }, err => {
-         callBackSet(false,err.message,objThis);
-         //alert(err.message);
-       }
-       );*/
   }
 
   showAlert(header: any, subheader: any, message: any) {

@@ -133,8 +133,4 @@ export const routes: Routes = [
         path: 'life-events/:id',
         loadChildren: () => import('./life-event-detail/life-event-detail.module').then(m => m.LifeEventDetailPageModule)
     },
-    {
-        path: 'addnotes',
-        loadChildren: () => import('./addnotes/addnotes.module').then(m => m.AddnotesPageModule)
-    },
 ];
