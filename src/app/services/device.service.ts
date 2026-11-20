@@ -160,6 +160,7 @@ export class DeviceService {
      * (new in Capacitor Device plugin, not available in Cordova)
      */
     async getLanguageCode(): Promise<string> {
-        return await Device.getLanguageCode();
+        const result = await Device.getLanguageCode();
+        return result.value ?? '';
     }
 }

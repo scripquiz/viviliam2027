@@ -37,7 +37,7 @@ export class NetworkService {
     // Track setTimeout IDs for cleanup
     private readonly timeoutIds: Set<number> = new Set();
     // Store Capacitor listener refs for cleanup
-    private networkStatusListenerRef: (() => void) | null = null;
+    private networkStatusListenerRef: any = null;
 
     constructor(private readonly logger: LoggerService) {
         // Initialize with basic check, detailed check will come after UI shows
@@ -78,7 +78,7 @@ export class NetworkService {
                 this.timeoutIds.add(initTimeoutId);
             });
 
-            this.networkStatusListenerRef = Network.addListener('networkStatusChange', (status) => {
+            const ref = await Network.addListener('networkStatusChange', (status: any) => {
                 this.logger.network('Status changed -',
                     'Connected:', status.connected,
                     'Type:', status.connectionType);
@@ -99,6 +99,7 @@ export class NetworkService {
                     this._connectionQuality.next('none');
                 }
             });
+            this.networkStatusListenerRef = ref;
         } catch (error) {
             this.logger.error('Initialization error:', error);
             // If initialization fails, assume we're online to allow app to function
@@ -324,7 +325,7 @@ export class NetworkService {
 
         // Remove Capacitor network listener
         if (this.networkStatusListenerRef) {
-            Network.removeListener(this.networkStatusListenerRef);
+            Network.removeAllListeners();
         }
     }
 }

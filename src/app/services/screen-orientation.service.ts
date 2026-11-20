@@ -12,11 +12,11 @@ import { LoggerService } from './logger.service';
     providedIn: 'root'
 })
 export class ScreenOrientationService implements OnDestroy {
-    private _orientation = new BehaviorSubject<string>('portrait');
+    private _orientation = new BehaviorSubject<OrientationType>('portrait' as OrientationType);
     public orientation$ = this._orientation.asObservable();
 
     private logger = inject(LoggerService);
-    private orientationListenerRef: (() => void) | null = null;
+    private orientationListenerRef: any = null;
 
     constructor(private platform: Platform) {
         this.initialize();
@@ -35,10 +35,11 @@ export class ScreenOrientationService implements OnDestroy {
             this._orientation.next(orientation.type);
 
             // Listen for orientation changes - correct event name is 'screenOrientationChange', not 'orientationChange'
-            this.orientationListenerRef = CapacitorScreenOrientation.addListener('screenOrientationChange', (event) => {
+            const ref = await CapacitorScreenOrientation.addListener('screenOrientationChange', (event: any) => {
                 this._orientation.next(event.type);
                 this.logger.log('Orientation changed to:', event.type);
             });
+            this.orientationListenerRef = ref;
         } catch (error) {
             this.logger.error('Error initializing ScreenOrientationService:', error);
         }
@@ -50,7 +51,7 @@ export class ScreenOrientationService implements OnDestroy {
      */
     getCurrentOrientation(): Observable<OrientationType> {
         // Update to use the correct method name
-        return from(CapacitorScreenOrientation.orientation());
+        return from(CapacitorScreenOrientation.orientation().then(res => res.type as OrientationType));
     }
 
     ngOnDestroy() {

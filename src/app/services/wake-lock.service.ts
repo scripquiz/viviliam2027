@@ -154,20 +154,26 @@ export class WakeLockService implements OnDestroy {
      */
     private setupAppStateListeners(): void {
         // React to app resuming from background
-        this.appStateSubscriptions.push(this.platform.resume.subscribe(async () => {
-            if (this.keepAwakeActive) {
-                this.logger.log('App resumed from background, reacquiring wake lock');
-                await this.keepAwake();
-            }
-        }));
+        this.appStateSubscriptions.push(() => {
+            const sub = this.platform.resume.subscribe(async () => {
+                if (this.keepAwakeActive) {
+                    this.logger.log('App resumed from background, reacquiring wake lock');
+                    await this.keepAwake();
+                }
+            });
+            return sub.unsubscribe.bind(sub);
+        });
 
         // React to app pausing/going to background
-        this.appStateSubscriptions.push(this.platform.pause.subscribe(async () => {
-            if (this.keepAwakeActive) {
-                this.logger.log('App going to background, releasing wake lock');
-                await this.allowSleepAgain();
-            }
-        }));
+        this.appStateSubscriptions.push(() => {
+            const sub = this.platform.pause.subscribe(async () => {
+                if (this.keepAwakeActive) {
+                    this.logger.log('App going to background, releasing wake lock');
+                    await this.allowSleepAgain();
+                }
+            });
+            return sub.unsubscribe.bind(sub);
+        });
     }
 
     /**
