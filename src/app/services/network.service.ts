@@ -1,6 +1,7 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy } from '@angular/core';
 import { Network } from '@capacitor/network';
 import { BehaviorSubject, Observable, map } from 'rxjs';
+import { LoggerService } from './logger.service';
 
 @Injectable({
     providedIn: 'root'
@@ -33,15 +34,19 @@ export class NetworkService {
     private lastVerificationTime = 0;
     // Whether to immediately initialize with connectivity check (default false)
     private immediateCheck = false;
+    // Track setTimeout IDs for cleanup
+    private readonly timeoutIds: Set<number> = new Set();
+    // Store Capacitor listener refs for cleanup
+    private networkStatusListenerRef: (() => void) | null = null;
 
-    constructor() {
+    constructor(private readonly logger: LoggerService) {
         // Initialize with basic check, detailed check will come after UI shows
         this.initialize();
     }
 
     private async initialize() {
         try {
-            console.log('NetworkService: Initializing');
+            this.logger.network('Initializing');
 
             // Start with optimistic assumption to allow app to load
             // We'll verify and update this later
@@ -50,7 +55,7 @@ export class NetworkService {
 
             // Get initial network status without blocking UI
             this.getNetworkStatus().then(status => {
-                console.log('NetworkService: Initial status -',
+                this.logger.network('Initial status -',
                     'Connected:', status.connected,
                     'Type:', status.connectionType);
 
@@ -62,7 +67,7 @@ export class NetworkService {
                 this.checkSpecialNetworkTypes(status.connectionType);
 
                 // Verify connectivity shortly after startup without blocking the UI
-                setTimeout(() => {
+                const initTimeoutId = setTimeout(() => {
                     if (status.connected) {
                         this.verifyConnectivity(true);
                     } else {
@@ -70,11 +75,11 @@ export class NetworkService {
                         this._connectionQuality.next('none');
                     }
                 }, 2000); // Wait 2 seconds for UI to appear
+                this.timeoutIds.add(initTimeoutId);
             });
 
-            // Listen for network status changes
-            Network.addListener('networkStatusChange', (status) => {
-                console.log('NetworkService: Status changed -',
+            this.networkStatusListenerRef = Network.addListener('networkStatusChange', (status) => {
+                this.logger.network('Status changed -',
                     'Connected:', status.connected,
                     'Type:', status.connectionType);
 
@@ -87,14 +92,15 @@ export class NetworkService {
                 // When network state changes, verify actual connectivity
                 if (status.connected) {
                     // Don't block UI on network change - verify in background
-                    setTimeout(() => this.verifyConnectivity(), 500);
+                    const changeTimeoutId = setTimeout(() => this.verifyConnectivity(), 500);
+                    this.timeoutIds.add(changeTimeoutId);
                 } else {
                     this._actualConnectivity.next(false);
                     this._connectionQuality.next('none');
                 }
             });
         } catch (error) {
-            console.error('NetworkService initialization error:', error);
+            this.logger.error('Initialization error:', error);
             // If initialization fails, assume we're online to allow app to function
             // The verification will update status when it completes
             this._actualConnectivity.next(true);
@@ -124,7 +130,7 @@ export class NetworkService {
 
         // Log detection results for debugging
         if (is5G || isWiFi6) {
-            console.log('NetworkService: Special network detected -',
+            this.logger.network('Special network detected -',
                 is5G ? '5G' : '',
                 isWiFi6 ? 'WiFi 6' : '');
         }
@@ -180,7 +186,7 @@ export class NetworkService {
         try {
             return await Network.getStatus();
         } catch (error) {
-            console.error('NetworkService: Error getting network status:', error);
+            this.logger.error('Error getting network status:', error);
             return { connected: true, connectionType: 'unknown' }; // Default to connected to allow app to load
         }
     }
@@ -200,14 +206,14 @@ export class NetworkService {
     async verifyConnectivity(forceCheck = false): Promise<boolean> {
         // Avoid multiple simultaneous checks
         if (this.isCheckingConnectivity && !forceCheck) {
-            console.log('NetworkService: Connectivity check already in progress');
+            this.logger.network('Connectivity check already in progress');
             return this._actualConnectivity.getValue();
         }
 
         // Throttle checks unless forced
         const now = Date.now();
         if (!forceCheck && now - this.lastVerificationTime < 5000) {
-            console.log('NetworkService: Skipping connectivity check - too recent');
+            this.logger.network('Skipping connectivity check - too recent');
             return this._actualConnectivity.getValue();
         }
 
@@ -218,7 +224,7 @@ export class NetworkService {
 
         this.isCheckingConnectivity = true;
         this.lastVerificationTime = now;
-        console.log('NetworkService: Verifying connectivity...');
+        this.logger.network('Verifying connectivity...');
 
         return new Promise<boolean>((resolve) => {
             let successfulPing = false;
@@ -239,7 +245,7 @@ export class NetworkService {
                     clearTimeout(requestTimeoutId);
 
                     const responseTime = Date.now() - startTime;
-                    console.log(`NetworkService: Connectivity probe succeeded in ${responseTime}ms`);
+                    this.logger.network(`Connectivity probe succeeded in ${responseTime}ms`);
                     this.estimateConnectionQuality(responseTime);
 
                     this._actualConnectivity.next(true);
@@ -249,7 +255,7 @@ export class NetworkService {
                 })
                 .catch(error => {
                     clearTimeout(requestTimeoutId);
-                    console.log('NetworkService: Connectivity probe failed:', error.name || error);
+                    this.logger.network(`Connectivity probe failed: ${error.name || error}`);
                     this._actualConnectivity.next(false);
                     this.updateConnectionQuality('poor');
                     this.isCheckingConnectivity = false;
@@ -301,11 +307,24 @@ export class NetworkService {
             else quality = 'poor';
         }
 
-        console.log(`NetworkService: Connection quality: ${quality} (${responseTime}ms)`);
+        this.logger.network(`Connection quality: ${quality} (${responseTime}ms)`);
         this.updateConnectionQuality(quality);
     }
 
     private updateConnectionQuality(quality: string) {
         this._connectionQuality.next(quality);
+    }
+
+    ngOnDestroy(): void {
+        // Clear all tracked timeouts
+        for (const id of this.timeoutIds) {
+            clearTimeout(id);
+        }
+        this.timeoutIds.clear();
+
+        // Remove Capacitor network listener
+        if (this.networkStatusListenerRef) {
+            Network.removeListener(this.networkStatusListenerRef);
+        }
     }
 }

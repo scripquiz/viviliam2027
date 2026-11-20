@@ -1,5 +1,6 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
+import { LoggerService } from './logger.service';
 
 type ReleaseHandler = () => void;
 
@@ -11,6 +12,8 @@ export class AudioFocusService {
     private readonly activeOwnerSubject = new BehaviorSubject<string | null>(null);
 
     readonly activeOwner$ = this.activeOwnerSubject.asObservable();
+
+    private logger = inject(LoggerService);
 
     registerOwner(ownerId: string, onRelease: ReleaseHandler): void {
         this.releaseHandlers.set(ownerId, onRelease);
@@ -31,7 +34,7 @@ export class AudioFocusService {
             try {
                 activeOwnerRelease?.();
             } catch (error) {
-                console.error(`AudioFocusService: failed to release owner "${activeOwner}"`, error);
+                this.logger.error(`AudioFocusService: failed to release owner "${activeOwner}"`, error);
             }
         }
 

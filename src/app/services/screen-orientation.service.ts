@@ -1,7 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import { ScreenOrientation as CapacitorScreenOrientation } from '@capacitor/screen-orientation';
 import { BehaviorSubject, Observable, from } from 'rxjs';
 import { Platform } from '@ionic/angular';
+import { LoggerService } from './logger.service';
 
 /**
  * Service that provides screen orientation functionality using Capacitor's ScreenOrientation plugin
@@ -10,9 +11,12 @@ import { Platform } from '@ionic/angular';
 @Injectable({
     providedIn: 'root'
 })
-export class ScreenOrientationService {
+export class ScreenOrientationService implements OnDestroy {
     private _orientation = new BehaviorSubject<string>('portrait');
     public orientation$ = this._orientation.asObservable();
+
+    private logger = inject(LoggerService);
+    private orientationListenerRef: (() => void) | null = null;
 
     constructor(private platform: Platform) {
         this.initialize();
@@ -31,12 +35,12 @@ export class ScreenOrientationService {
             this._orientation.next(orientation.type);
 
             // Listen for orientation changes - correct event name is 'screenOrientationChange', not 'orientationChange'
-            CapacitorScreenOrientation.addListener('screenOrientationChange', (event) => {
+            this.orientationListenerRef = CapacitorScreenOrientation.addListener('screenOrientationChange', (event) => {
                 this._orientation.next(event.type);
-                console.log('Orientation changed to:', event.type);
+                this.logger.log('Orientation changed to:', event.type);
             });
         } catch (error) {
-            console.error('Error initializing ScreenOrientationService:', error);
+            this.logger.error('Error initializing ScreenOrientationService:', error);
         }
     }
 
@@ -44,9 +48,15 @@ export class ScreenOrientationService {
      * Get the current screen orientation
      * @returns Observable that emits current orientation
      */
-    getCurrentOrientation(): Observable<any> {
+    getCurrentOrientation(): Observable<OrientationType> {
         // Update to use the correct method name
         return from(CapacitorScreenOrientation.orientation());
+    }
+
+    ngOnDestroy() {
+        if (this.orientationListenerRef) {
+            this.orientationListenerRef();
+        }
     }
 
     /**
@@ -78,7 +88,7 @@ export class ScreenOrientationService {
      * Creates an observable that emits when orientation changes
      * @returns Observable that emits on orientation change
      */
-    onChange(): Observable<any> {
+    onChange(): Observable<OrientationType> {
         return this.orientation$;
     }
 }

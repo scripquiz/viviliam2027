@@ -1,7 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { Platform } from '@ionic/angular';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { LoggerService } from './logger.service';
 
 export interface DarkModeState {
   globalDarkMode: boolean;
@@ -13,7 +14,7 @@ export interface DarkModeState {
 @Injectable({
   providedIn: 'root',
 })
-export class DarkModeService {
+export class DarkModeService implements OnDestroy {
   private readonly STORAGE_KEYS = {
     global: 'globalDarkMode',
     read: 'readDarkMode',
@@ -30,7 +31,13 @@ export class DarkModeService {
 
   public darkModeState$ = this.darkModeState.asObservable();
 
-  constructor(private platform: Platform) {
+  /** Ref to the matchMedia event listener so it can be removed in ngOnDestroy */
+  private mediaQueryListenerRef: ((e: MediaQueryListEvent) => void) | null = null;
+
+  constructor(
+    private logger: LoggerService,
+    private platform: Platform
+  ) {
     this.initializeDarkMode();
   }
 
@@ -58,14 +65,14 @@ export class DarkModeService {
     this.applyGlobalDarkMode(state.globalDarkMode);
 
     // Listen for system preference changes
-    window
-      .matchMedia('(prefers-color-scheme: dark)')
-      .addEventListener('change', (e) => {
-        // Only auto-update if user hasn't explicitly set a preference
-        if (localStorage.getItem(this.STORAGE_KEYS.global) === null) {
-          this.toggleGlobalDarkMode(e.matches);
-        }
-      });
+    const mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)');
+    this.mediaQueryListenerRef = (e: MediaQueryListEvent) => {
+      // Only auto-update if user hasn't explicitly set a preference
+      if (localStorage.getItem(this.STORAGE_KEYS.global) === null) {
+        this.toggleGlobalDarkMode(e.matches);
+      }
+    };
+    mediaQueryList.addEventListener('change', this.mediaQueryListenerRef);
   }
 
   /**
@@ -213,12 +220,12 @@ export class DarkModeService {
     const bodyElement = document.body;
     if (isDark) {
       bodyElement.classList.add('dark-theme');
-      console.log('✅ Dark theme class ADDED to body');
-      console.log('Body classes:', bodyElement.className);
+      this.logger.log('Dark theme class ADDED to body');
+      this.logger.log('Body classes:', bodyElement.className);
     } else {
       bodyElement.classList.remove('dark-theme');
-      console.log('❌ Dark theme class REMOVED from body');
-      console.log('Body classes:', bodyElement.className);
+      this.logger.log('Dark theme class REMOVED from body');
+      this.logger.log('Body classes:', bodyElement.className);
     }
 
     // Force styles to re-apply
@@ -229,7 +236,7 @@ export class DarkModeService {
 
     // Log current computed styles
     const computedStyle = window.getComputedStyle(bodyElement);
-    console.log('Body background-color:', computedStyle.backgroundColor);
+    this.logger.log('Body background-color:', computedStyle.backgroundColor);
   }
 
   /**
@@ -294,12 +301,12 @@ export class DarkModeService {
       // Update system bar protection overlays using the edge-to-edge plugin.
       await this.updateNavigationBar(barColor);
 
-      console.log(
+      this.logger.log(
         `StatusBar & NavigationBar updated for ${currentPage || 'global'
         } - Dark: ${isDark}, Color: ${barColor}`
       );
     } catch (error) {
-      console.error('Error updating StatusBar:', error);
+      this.logger.error('Error updating StatusBar:', error);
     }
   }
 
@@ -330,9 +337,9 @@ export class DarkModeService {
         await EdgeToEdge.setBackgroundColor({ color });
       }
 
-      console.log(`EdgeToEdge system bar overlays updated: ${color}`);
+      this.logger.log(`EdgeToEdge system bar overlays updated: ${color}`);
     } catch (error) {
-      console.error('Error updating Navigation Bar with EdgeToEdge:', error);
+      this.logger.error('Error updating Navigation Bar with EdgeToEdge:', error);
     }
   }
 
@@ -352,6 +359,12 @@ export class DarkModeService {
       } else {
         element.classList.remove('dark-mode');
       }
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.mediaQueryListenerRef) {
+      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', this.mediaQueryListenerRef);
     }
   }
 }

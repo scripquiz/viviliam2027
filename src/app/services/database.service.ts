@@ -1,4 +1,5 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import { LoggerService } from './logger.service';
 import {
     CapacitorSQLite,
     SQLiteConnection,
@@ -74,6 +75,8 @@ export class DatabaseService {
     private readonly pendingOpenOperations = new Map<string, Promise<void>>();
     private prebuiltCopyPromise?: Promise<void>;
 
+    private logger = inject(LoggerService);
+
     async create(options: { name: string; location?: string }): Promise<DatabaseConnection> {
         await this.ensurePrebuiltDatabaseCopied();
 
@@ -143,7 +146,7 @@ export class DatabaseService {
                     }
                 } catch (error) {
                     // Ignore copy failures and fall back to runtime import path.
-                    console.warn('Prebuilt database copy skipped:', error);
+                    this.logger.warn('Prebuilt database copy skipped:', error);
                 }
             })();
         }

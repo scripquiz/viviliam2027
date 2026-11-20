@@ -248,9 +248,9 @@ These TypeScript files (`1.ts` through `15.ts`) in the `assets/` directory are h
 
 ### Phase 2 — Safety Fixes (1 hour)
 - [x] C3: Audit `'DatabaseConnection'` token usage — removed, single class-token provider confirmed
-- [ ] M4: Add `@Injectable({ providedIn: 'root' })` to DarkModeService
+- [x] M4: Add `@Injectable({ providedIn: 'root' })` to DarkModeService — confirmed present (lines 14–16)
 - [ ] Fix memory leaks in network.service.ts, wake-lock.service.ts (add ngOnDestroy)
-- [ ] Convert console.log → logger.service() calls across all services
+- [x] Convert console.log → logger.service() calls across all services — completed (6 services, ~35+ calls converted)
 
 ### Phase 3 — Standalone Migration (2–3 days)
 - [ ] H1: Migrate all 35 pages from `loadChildren` NgModule → `loadComponent()` standalone

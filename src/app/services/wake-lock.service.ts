@@ -1,6 +1,7 @@
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, OnDestroy, inject } from '@angular/core';
 import { Platform } from '@ionic/angular';
 import { Capacitor } from '@capacitor/core';
+import { LoggerService } from './logger.service';
 
 /**
  * Service that provides screen wake lock functionality using the modern Web Wake Lock API
@@ -23,11 +24,13 @@ export class WakeLockService implements OnDestroy {
     private currentRetries: number = 0;
     private maxTimeoutMinutes: number = 30;
     private inactivityTimeoutSeconds: number = 300; // 5 minutes of inactivity
+    private appStateSubscriptions: (() => void)[] = [];
+    private logger = inject(LoggerService);
 
     constructor(private platform: Platform) {
         // Check if Wake Lock API is supported
         this.isWakeLockSupported = 'wakeLock' in navigator;
-        console.log(`Wake Lock API supported: ${this.isWakeLockSupported}`);
+        this.logger.log(`Wake Lock API supported: ${this.isWakeLockSupported}`);
 
         // Set up visibility change listener to reacquire wake lock when page becomes visible again
         this.setupVisibilityChangeListener();
@@ -43,7 +46,7 @@ export class WakeLockService implements OnDestroy {
     async keepAwake(): Promise<void> {
         // If already active, skip re-acquisition and just reset inactivity timeout
         if (this.keepAwakeActive) {
-            console.log('Wake lock already active, resetting inactivity timeout');
+            this.logger.log('Wake lock already active, resetting inactivity timeout');
             this.resetInactivityTimeout();
             return Promise.resolve();
         }
@@ -68,11 +71,11 @@ export class WakeLockService implements OnDestroy {
                 // Use the modern Web Wake Lock API
                 this.wakeLock = await (navigator as any).wakeLock.request('screen');
 
-                console.log('Wake Lock acquired successfully');
+                this.logger.log('Wake Lock acquired successfully');
 
                 // Add a listener to reacquire the wake lock if it's released
                 this.wakeLock.addEventListener('release', () => {
-                    console.log('Wake Lock released by system');
+                    this.logger.log('Wake Lock released by system');
 
                     // Only try to reacquire if we're still in "keep awake" mode
                     if (this.keepAwakeActive) {
@@ -86,7 +89,7 @@ export class WakeLockService implements OnDestroy {
                 return this.useFallbackWakeLock();
             }
         } catch (err) {
-            console.error('Error acquiring wake lock:', err);
+            this.logger.error('Error acquiring wake lock:', err);
 
             // Try fallback methods
             return this.useFallbackWakeLock();
@@ -120,7 +123,7 @@ export class WakeLockService implements OnDestroy {
             await this.releaseWakeLock();
             return Promise.resolve();
         } catch (err) {
-            console.error('Error releasing wake lock:', err);
+            this.logger.error('Error releasing wake lock:', err);
             return Promise.reject(err);
         }
     }
@@ -137,7 +140,7 @@ export class WakeLockService implements OnDestroy {
         // Create new listener
         this.visibilityChangeListener = async () => {
             if (document.visibilityState === 'visible' && this.keepAwakeActive) {
-                console.log('Document became visible, reacquiring wake lock');
+                this.logger.log('Document became visible, reacquiring wake lock');
                 await this.retryAcquireWakeLock();
             }
         };
@@ -151,20 +154,20 @@ export class WakeLockService implements OnDestroy {
      */
     private setupAppStateListeners(): void {
         // React to app resuming from background
-        this.platform.resume.subscribe(async () => {
+        this.appStateSubscriptions.push(this.platform.resume.subscribe(async () => {
             if (this.keepAwakeActive) {
-                console.log('App resumed from background, reacquiring wake lock');
+                this.logger.log('App resumed from background, reacquiring wake lock');
                 await this.keepAwake();
             }
-        });
+        }));
 
         // React to app pausing/going to background
-        this.platform.pause.subscribe(async () => {
+        this.appStateSubscriptions.push(this.platform.pause.subscribe(async () => {
             if (this.keepAwakeActive) {
-                console.log('App going to background, releasing wake lock');
+                this.logger.log('App going to background, releasing wake lock');
                 await this.allowSleepAgain();
             }
-        });
+        }));
     }
 
     /**
@@ -175,9 +178,9 @@ export class WakeLockService implements OnDestroy {
         if (this.wakeLock) {
             try {
                 await this.wakeLock.release();
-                console.log('Wake Lock released');
+                this.logger.log('Wake Lock released');
             } catch (err) {
-                console.warn('Error releasing wake lock:', err);
+                this.logger.warn('Error releasing wake lock:', err);
             } finally {
                 this.wakeLock = null;
             }
@@ -189,7 +192,7 @@ export class WakeLockService implements OnDestroy {
                 (window as any).noSleepInstance.disable();
                 (window as any).noSleepInstance = null;
             } catch (err) {
-                console.error('Error disabling NoSleep:', err);
+                this.logger.error('Error disabling NoSleep:', err);
             }
         }
 
@@ -200,7 +203,7 @@ export class WakeLockService implements OnDestroy {
                 videoElement.pause();
                 videoElement.remove();
             } catch (err) {
-                console.error('Error removing video element:', err);
+                this.logger.error('Error removing video element:', err);
             }
         }
     }
@@ -220,7 +223,7 @@ export class WakeLockService implements OnDestroy {
         }
 
         if (this.currentRetries >= this.maxRetries) {
-            console.warn(`Failed to reacquire wake lock after ${this.maxRetries} attempts, falling back to alternative method`);
+            this.logger.warn(`Failed to reacquire wake lock after ${this.maxRetries} attempts, falling back to alternative method`);
             return this.useFallbackWakeLock();
         }
 
@@ -228,14 +231,14 @@ export class WakeLockService implements OnDestroy {
         const delay = Math.min(Math.pow(2, this.currentRetries) * 500, 4000); // Cap at 4 seconds
         this.currentRetries++;
 
-        console.log(`Attempting to reacquire wake lock in ${delay}ms (attempt ${this.currentRetries} of ${this.maxRetries})`);
+        this.logger.log(`Attempting to reacquire wake lock in ${delay}ms (attempt ${this.currentRetries} of ${this.maxRetries})`);
 
         // Set timeout for retry
         this.retryTimeoutId = setTimeout(async () => {
             try {
                 if (this.isWakeLockSupported && document.visibilityState === 'visible') {
                     this.wakeLock = await (navigator as any).wakeLock.request('screen');
-                    console.log('Successfully reacquired wake lock');
+                    this.logger.log('Successfully reacquired wake lock');
 
                     // Reset retry counter on success
                     this.currentRetries = 0;
@@ -244,13 +247,13 @@ export class WakeLockService implements OnDestroy {
                     await this.useFallbackWakeLock();
                 }
             } catch (err) {
-                console.error('Error while retrying to acquire wake lock:', err);
+                this.logger.error('Error while retrying to acquire wake lock:', err);
 
                 // Try again with increased delay (only if under max retries)
                 if (this.currentRetries < this.maxRetries) {
                     this.retryAcquireWakeLock();
                 } else {
-                    console.warn('Max retries reached, using fallback');
+                    this.logger.warn('Max retries reached, using fallback');
                     await this.useFallbackWakeLock();
                 }
             }
@@ -261,16 +264,16 @@ export class WakeLockService implements OnDestroy {
      * Use fallback methods to keep the screen awake
      */
     private async useFallbackWakeLock(): Promise<void> {
-        console.log('Using fallback wake lock methods');
+        this.logger.log('Using fallback wake lock methods');
 
         // Try platform specific native features if we're running as a Capacitor app
         if (Capacitor.isNativePlatform()) {
             try {
                 // If a native plugin is available, we could use it here
                 // For example: @capacitor/keep-awake or custom native implementation
-                console.log('Native platform detected - consider using @capacitor/keep-awake plugin');
+                this.logger.log('Native platform detected - consider using @capacitor/keep-awake plugin');
             } catch (err) {
-                console.error('Native fallback error:', err);
+                this.logger.error('Native fallback error:', err);
             }
         }
 
@@ -279,20 +282,20 @@ export class WakeLockService implements OnDestroy {
             try {
                 (window as any).noSleepInstance = new (window as any).NoSleep();
                 (window as any).noSleepInstance.enable();
-                console.log('NoSleep.js fallback activated');
+                this.logger.log('NoSleep.js fallback activated');
                 return Promise.resolve();
             } catch (err) {
-                console.error('NoSleep fallback error:', err);
+                this.logger.error('NoSleep fallback error:', err);
             }
         }
 
         // Last resort: use a video element hack (not recommended for production)
         try {
             this.createVideoElement();
-            console.log('Video element fallback activated');
+            this.logger.log('Video element fallback activated');
             return Promise.resolve();
         } catch (err) {
-            console.error('Video fallback error:', err);
+            this.logger.error('Video fallback error:', err);
             return Promise.reject(err);
         }
     }
@@ -334,14 +337,14 @@ export class WakeLockService implements OnDestroy {
         const attemptPlay = (retries = 3) => {
             video.play()
                 .then(() => {
-                    console.log('Wake lock video playing successfully');
+                    this.logger.log('Wake lock video playing successfully');
                 })
                 .catch(error => {
-                    console.error('Failed to play wake lock video:', error);
+                    this.logger.error('Failed to play wake lock video:', error);
 
                     // Retry with user interaction trigger if available
                     if (retries > 0) {
-                        console.log(`Retrying video play, ${retries} attempts left`);
+                        this.logger.log(`Retrying video play, ${retries} attempts left`);
 
                         // Add a click event listener to try again on user interaction
                         const retryOnInteraction = () => {
@@ -364,6 +367,12 @@ export class WakeLockService implements OnDestroy {
      * Clean up resources when service is destroyed
      */
     ngOnDestroy(): void {
+        // Unsubscribe from platform state listeners
+        for (const unsubscribe of this.appStateSubscriptions) {
+            unsubscribe();
+        }
+        this.appStateSubscriptions = [];
+
         // Clear any pending retry attempts
         if (this.retryTimeoutId) {
             clearTimeout(this.retryTimeoutId);
@@ -399,7 +408,7 @@ export class WakeLockService implements OnDestroy {
 
         // Set new timeout
         this.inactivityTimeoutId = setTimeout(() => {
-            console.log(`Wake lock auto-released after ${this.inactivityTimeoutSeconds} seconds of inactivity`);
+            this.logger.log(`Wake lock auto-released after ${this.inactivityTimeoutSeconds} seconds of inactivity`);
             this.allowSleepAgain();
         }, this.inactivityTimeoutSeconds * 1000);
     }
@@ -415,7 +424,7 @@ export class WakeLockService implements OnDestroy {
 
         // Set max timeout
         this.maxTimeoutId = setTimeout(() => {
-            console.log(`Wake lock auto-released after ${this.maxTimeoutMinutes} minutes maximum hold time`);
+            this.logger.log(`Wake lock auto-released after ${this.maxTimeoutMinutes} minutes maximum hold time`);
             this.allowSleepAgain();
         }, this.maxTimeoutMinutes * 60 * 1000);
     }
