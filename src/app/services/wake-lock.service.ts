@@ -168,8 +168,9 @@ export class WakeLockService implements OnDestroy {
         this.appStateSubscriptions.push(() => {
             const sub = this.platform.pause.subscribe(async () => {
                 if (this.keepAwakeActive) {
-                    this.logger.log('App going to background, releasing wake lock');
-                    await this.allowSleepAgain();
+                    this.logger.log('App going to background — skipping wake lock release during active playback');
+                    // Don't release wake lock during active audio playback.
+                    // The inactivity timeout and max timeout will handle cleanup when playback ends.
                 }
             });
             return sub.unsubscribe.bind(sub);

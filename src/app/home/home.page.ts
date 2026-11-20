@@ -649,6 +649,9 @@ export class HomePage {
         } catch (error: any) {
           this.logger.error('Error replaying audio:', error);
         }
+        // Re-acquire wake lock and reset inactivity timer for per-item repeat
+        await this.wakeLockService.keepAwake();
+        this.wakeLockService.resetActivity();
       } else {
         this.stopAudioDirect(this.currentAudioIndex);
         activeAudioArray[this.currentAudioIndex].repeat_state = 0;
