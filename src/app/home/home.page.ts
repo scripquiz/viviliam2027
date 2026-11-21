@@ -37,6 +37,9 @@ export class HomePage {
   private audioProgressIntervalId: any = null;
   private lastReportedNetworkState: boolean | null = null;
 
+  // Network quality states: excellent, good, fair, poor
+  public connectionQuality: string = 'unknown';
+
   public slideOpts = {
     initialSlide: 0,
     speed: 300,
@@ -183,13 +186,9 @@ export class HomePage {
                   activeAudioArray.length > 0 &&
                   this.currentAudioIndex < activeAudioArray.length
                 ) {
-                  if (
-                    this.audio.nativeElement.currentTime >=
-                    activeAudioArray[this.currentAudioIndex].duration - 0.5
-                  ) {
-                    this.logger.log('End of audio detected by time comparison');
-                    this.handleAudioEnded();
-                  } else {
+                  // Fix #1: Removed unreliable time-based threshold check (duration - 0.5)
+                  // The native 'ended' event listener is the primary signal for audio completion
+                  // Polling now only handles progress tracking, not endpoint detection
                     activeAudioArray[this.currentAudioIndex].ctime = parseInt(
                       this.audio.nativeElement.currentTime.toString()
                     );
@@ -208,7 +207,6 @@ export class HomePage {
                             this.audio.nativeElement.currentTime.toString()
                           )
                       );
-                  }
                 }
               }
             }, 1000);
@@ -607,6 +605,33 @@ export class HomePage {
     };
   }
   async handleAudioEnded() {
+    // Fix #2: Validate that playback actually completed before advancing track
+    const audio = this.audio.nativeElement;
+    const isBufferedComplete = audio.buffered && audio.buffered.length > 0;
+    const bufferedEnd = isBufferedComplete ? audio.buffered.end(audio.buffered.length - 1) : null;
+    const currentPos = audio.currentTime;
+
+    // Only advance track if: buffer is complete OR we're at the end of natural content
+    // (buffering ended naturally, not cut short by network issues)
+    const shouldAdvance =
+      !isBufferedComplete || // No buffered data - likely ended normally
+      (bufferedEnd === currentPos && bufferedEnd < audio.duration); // Buffered to actual end
+
+    if (!shouldAdvance) {
+      this.logger.warn(
+        'Audio ended but may not have completed playback fully. Buffer state: ' +
+          `currentTime=${currentPos}, bufferedEnd=${bufferedEnd}, duration=${audio.duration}`
+      );
+      // Re-trigger playback from current position if buffering was incomplete
+      try {
+        await audio.play();
+        this.logger.log('Replaying audio due to incomplete buffer');
+      } catch (error: any) {
+        this.logger.error('Error replaying audio:', error);
+      }
+      return; // Don't advance track
+    }
+
     const activeAudioArray = this.todayAudioFiles;
     activeAudioArray[this.currentAudioIndex].ctime = 0;
     activeAudioArray[this.currentAudioIndex].ctimeintime = '0:00';
