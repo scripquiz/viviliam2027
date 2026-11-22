@@ -17,6 +17,8 @@ import { Browser } from '@capacitor/browser';
 import { LoggerService } from '../services/logger.service';
 import { DarkModeService } from '../services/dark-mode.service';
 import { AudioFocusService } from '../services/audio-focus.service';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { AudioCacheService } from '../core/audio-cache.service';
 @Component({
   selector: 'app-home',
   templateUrl: 'home.page.html',
@@ -96,7 +98,8 @@ export class HomePage {
     private databaseService: DatabaseService,
     private logger: LoggerService,
     private darkModeService: DarkModeService,
-    private audioFocusService: AudioFocusService
+    private audioFocusService: AudioFocusService,
+    private audioCacheService: AudioCacheService
   ) {
     this.errorStateTimer = null;
     this.stableErrorDetected = false;
@@ -1012,64 +1015,108 @@ export class HomePage {
       priority: true,
     });
   }
-  tryLoadFromCache(): boolean {
+  async tryLoadFromCache(): Promise<boolean> {
     this.logger.log('Attempting to load audio from cache...');
+
     const today = new Date();
     const dateStr = `${today.getFullYear()}-${String(
       today.getMonth() + 1
     ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const cachedRaw = localStorage.getItem('todayAudioCache');
-    if (!cachedRaw) {
-      this.logger.log('No cached audio data found');
-      return false;
-    }
-    let cacheEntry: any;
-    try {
-      cacheEntry = JSON.parse(cachedRaw);
-    } catch (error) {
-      this.logger.error('Cache data is corrupted, clearing it:', error);
-      localStorage.removeItem('todayAudioCache');
-      localStorage.removeItem('todayAudioCacheDate');
-      return false;
-    }
-    if (!cacheEntry || typeof cacheEntry !== 'object') {
-      this.logger.log('Invalid cache entry format, clearing');
-      localStorage.removeItem('todayAudioCache');
-      localStorage.removeItem('todayAudioCacheDate');
-      return false;
-    }
-    const cachedDate = cacheEntry.cacheDate || '';
-    if (cachedDate !== dateStr) {
-      this.logger.log(`Cache date '${cachedDate}' doesn't match today '${dateStr}'`);
-      return false;
-    }
-    const data = cacheEntry.content;
-    if (!data || typeof data !== 'object') {
-      this.logger.log('Cache content is invalid, clearing');
-      localStorage.removeItem('todayAudioCache');
-      localStorage.removeItem('todayAudioCacheDate');
-      return false;
-    }
-    try {
-      this.logger.log('Found valid cached audio data for today');
-      if (data.audio && Array.isArray(data.audio)) {
-        this.processNewAudioData(data, dateStr);
-        this.setStableErrorState(
-          true,
-          'Using cached data - no internet connection'
-        );
-        return true;
-      } else {
-        this.logger.log('Cache has no valid audio array, discarding');
+
+    // First, try to load from filesystem cache using AudioCacheService
+    this.logger.log('Checking Capacitor filesystem cache...');
+    const todayKey = `audio_${dateStr}`;
+    const cachedAudio = await this.audioCacheService.getFromCache(todayKey);
+
+    if (cachedAudio) {
+      this.logger.log('Found audio from Capacitor filesystem cache');
+
+      // Reconstruct audio data from cached files
+      const todayAudioFiles: any[] = [];
+      for (let i = 0; i < this.authservice.audio_bibles?.length || 0; i++) {
+        const type = ['bible', 'prayer', 'quote'][i] as string;
+        // Use the cached audio file URL directly from filesystem
+        todayAudioFiles.push({
+          id: `${type}_${dateStr}_${i}`,
+          type: type,
+          subtitle: `${type} - Today`,
+          url: cachedAudio.url,
+          duration: 0, // Will be populated when audio metadata loads
+          durationintime: '0:00',
+          state: 'pause',
+          ctime: 0,
+          ctimeintime: '0:00',
+          repeat_state: 0,
+          repeat_played_count: 0,
+        });
+      }
+
+      this.todayAudioFiles = todayAudioFiles;
+      this.notificationsHomeCount = this.todayAudioFiles.length;
+      this.isAudioLoading = false;
+      this.audioLoadError = true;
+      this.setStableErrorState(
+        true,
+        'Using cached data from filesystem - no internet connection'
+      );
+      return true;
+    } else {
+      this.logger.log('No audio found in Capacitor cache, checking localStorage fallback...');
+
+      // Fall back to localStorage-based cache for backward compatibility
+      const cachedRaw = localStorage.getItem('todayAudioCache');
+      if (!cachedRaw) {
+        this.logger.log('No cached audio data found in localStorage either');
+        return false;
+      }
+      let cacheEntry: any;
+      try {
+        cacheEntry = JSON.parse(cachedRaw);
+      } catch (error) {
+        this.logger.error('Cache data is corrupted, clearing it:', error);
         localStorage.removeItem('todayAudioCache');
         localStorage.removeItem('todayAudioCacheDate');
         return false;
       }
-    } catch (error) {
-      this.logger.error('Error loading from cache:', error);
-      localStorage.removeItem('todayAudioCache');
-      localStorage.removeItem('todayAudioCacheDate');
-      return false;
+      if (!cacheEntry || typeof cacheEntry !== 'object') {
+        this.logger.log('Invalid cache entry format, clearing');
+        localStorage.removeItem('todayAudioCache');
+        localStorage.removeItem('todayAudioCacheDate');
+        return false;
+      }
+      const cachedDate = cacheEntry.cacheDate || '';
+      if (cachedDate !== dateStr) {
+        this.logger.log(`Cache date '${cachedDate}' doesn't match today '${dateStr}'`);
+        return false;
+      }
+      const data = cacheEntry.content;
+      if (!data || typeof data !== 'object') {
+        this.logger.log('Cache content is invalid, clearing');
+        localStorage.removeItem('todayAudioCache');
+        localStorage.removeItem('todayAudioCacheDate');
+        return false;
+      }
+      try {
+        this.logger.log('Found valid cached audio data for today in localStorage');
+        if (data.audio && Array.isArray(data.audio)) {
+          this.processNewAudioData(data, dateStr);
+          this.setStableErrorState(
+            true,
+            'Using cached data from localStorage - no internet connection'
+          );
+          return true;
+        } else {
+          this.logger.log('Cache has no valid audio array, discarding');
+          localStorage.removeItem('todayAudioCache');
+          localStorage.removeItem('todayAudioCacheDate');
+          return false;
+        }
+      } catch (error) {
+        this.logger.error('Error loading from cache:', error);
+        localStorage.removeItem('todayAudioCache');
+        localStorage.removeItem('todayAudioCacheDate');
+        return false;
+      }
     }
   }
   loadAudioDirectly() {
