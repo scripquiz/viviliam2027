@@ -405,6 +405,10 @@ export class HomePage {
         this.logger.network(
           'Active internet connection confirmed - initializing page'
         );
+        // Clear stale localStorage cache when network is available to force fresh API fetch
+        localStorage.removeItem('todayAudioCache');
+        localStorage.removeItem('todayAudioCacheDate');
+        this.logger.log('Cleared audio cache - will fetch fresh data from API');
         this.isNetworkAvailable = '1';
         this.hasInternetConnection = true;
         this.setStableErrorState(false, '');
