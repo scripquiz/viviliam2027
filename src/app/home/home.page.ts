@@ -1035,35 +1035,61 @@ export class HomePage {
     if (cachedAudio) {
       this.logger.log('Found audio from Capacitor filesystem cache');
 
-      // Reconstruct audio data from cached files
+      // Check if we have a valid cached URL - the service returns single cached file path
+      let cachedUrl: string | null = cachedAudio.url || null;
+
+      // Reconstruct audio data from cached entries - check if we have enough individual cache entries
       const todayAudioFiles: any[] = [];
+
       for (let i = 0; i < this.authservice.audio_bibles?.length || 0; i++) {
         const type = ['bible', 'prayer', 'quote'][i] as string;
-        // Use the cached audio file URL directly from filesystem
-        todayAudioFiles.push({
-          id: `${type}_${dateStr}_${i}`,
-          type: type,
-          subtitle: `${type} - Today`,
-          url: cachedAudio.url,
-          duration: 0, // Will be populated when audio metadata loads
-          durationintime: '0:00',
-          state: 'pause',
-          ctime: 0,
-          ctimeintime: '0:00',
-          repeat_state: 0,
-          repeat_played_count: 0,
-        });
+
+        // Check if we have a valid cached URL for this audio item
+        let itemUrl: string | null = null;
+
+        // The cache service stores ONE URL per date key (not per-type).
+        // If cachedAudio.url exists, use it for all items that need caching.
+        // This handles the case where all three audio types share the same cached file.
+        if (cachedUrl) {
+          itemUrl = cachedUrl;
+          this.logger.debug(`Using cached audio URL: ${itemUrl.substring(0, 50)}...`);
+        }
+
+        // Only add this audio item if we found a valid cache URL for it
+        // Skip items without valid cache to prevent playing wrong audio or same file repeatedly
+        if (itemUrl) {
+          todayAudioFiles.push({
+            id: `${type}_${dateStr}_${i}`,
+            type: type,
+            subtitle: `${type} - Today`,
+            url: itemUrl,
+            duration: 0, // Will be populated when audio metadata loads
+            durationintime: '0:00',
+            state: 'pause',
+            ctime: 0,
+            ctimeintime: '0:00',
+            repeat_state: 0,
+            repeat_played_count: 0,
+          });
+        } else {
+          this.logger.warn(`Skipping audio item ${i} (${type}) - no valid cache entry found`);
+        }
       }
 
-      this.todayAudioFiles = todayAudioFiles;
-      this.notificationsHomeCount = this.todayAudioFiles.length;
-      this.isAudioLoading = false;
-      this.audioLoadError = true;
-      this.setStableErrorState(
-        true,
-        'Using cached data from filesystem - no internet connection'
-      );
-      return true;
+      // Only load from cache if we have at least one valid audio item
+      if (todayAudioFiles.length > 0) {
+        this.todayAudioFiles = todayAudioFiles;
+        this.notificationsHomeCount = this.todayAudioFiles.length;
+        this.isAudioLoading = false;
+        this.audioLoadError = true;
+        this.setStableErrorState(
+          true,
+          'Using cached data from filesystem - no internet connection'
+        );
+        return true;
+      }
+      this.logger.log('No valid audio URLs found in cache');
+      return false;
     } else {
       this.logger.log('No audio found in Capacitor cache, checking localStorage fallback...');
 
@@ -1225,6 +1251,7 @@ export class HomePage {
       }
     );
   }
+
   processNewAudioData(data, dateStr) {
     this.logger.log(`Processing new API audio data for date: ${dateStr}`);
     try {
